@@ -1,20 +1,11 @@
-										
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>F5 VIPs and Pool Members</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js"></script>
     <style>
-	
-		logo {
-			width: 150px; /* Adjust the size as needed */
-			height: auto;
-			display: block;
-			margin: 0 auto; /* Center the logo */
-}
-	     
-		
         body {
             font-family: Arial, sans-serif;
             background-color: #f0f8ff;
@@ -30,15 +21,6 @@
             text-align: center;
             color: red;
         }
-		logo {
-			width: 150px; /* Adjust the size as needed */
-			height: auto;
-			display: block;
-			margin: 0 auto; /* Center the logo */
-        }
-		
-		
-		
         table {
             width: 100%;
             border-collapse: collapse;
@@ -60,11 +42,6 @@
         }
         table tr:hover {
             background-color: #f1f1f1;
-        }
-        ul {
-            margin: 0;
-            padding: 0;
-            list-style-type: none;
         }
         input[type="text"] {
             width: 50%;
@@ -94,13 +71,12 @@
             color: #999;
         }
     </style>
-
+</head>
 <body>
-    
-    <h1>WELCOME TO Novartis  F5 INVENTORY PORTAL</h1>
+
+    <h1>WELCOME TO Novartis F5 INVENTORY PORTAL</h1>
     <h2>F5 VIPs and Pool Members</h2>
-	
-	
+
     <input type="text" id="filterInput" placeholder="Search by VIP Name..." onkeyup="filterTable()">
 
     <table id="inventoryTable">
@@ -177,29 +153,37 @@
         }
 
         function downloadExcel() {
-            const table = document.getElementById('inventoryTable');
-            const rows = table.getElementsByTagName('tr');
-            let csvContent = "data:text/csv;charset=utf-8,";
+            let table = document.getElementById('inventoryTable');
+            let workbook = XLSX.utils.book_new();
+            let sheetData = [];
 
+            let rows = table.getElementsByTagName('tr');
             for (let i = 0; i < rows.length; i++) {
-                const cols = rows[i].getElementsByTagName('th').length ? rows[i].getElementsByTagName('th') : rows[i].getElementsByTagName('td');
-                const row = [];
+                let cols = rows[i].getElementsByTagName(i === 0 ? 'th' : 'td');
+                let rowData = [];
+
                 for (let j = 0; j < cols.length; j++) {
-                    row.push(cols[j].innerText);
+                    // If the column contains a list (like Pool Members), format it properly
+                    if (cols[j].getElementsByTagName('ul').length > 0) {
+                        let listItems = cols[j].getElementsByTagName('li');
+                        let listText = [];
+                        for (let k = 0; k < listItems.length; k++) {
+                            listText.push(listItems[k].innerText);
+                        }
+                        rowData.push(listText.join("\n")); // Separate items with newline for Excel
+                    } else {
+                        rowData.push(cols[j].innerText);
+                    }
                 }
-                csvContent += row.join(",") + "\\n";
+                sheetData.push(rowData);
             }
 
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", "f5_inventory.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            let worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+            XLSX.utils.book_append_sheet(workbook, worksheet, "F5 Inventory");
+
+            XLSX.writeFile(workbook, "f5_inventory.xlsx");
         }
-		
-		
     </script>
+
 </body>
 </html>
