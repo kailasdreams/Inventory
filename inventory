@@ -14,9 +14,7 @@ PASSWORD = "kailas@123"  # Replace with your F5 password
 
 # List of F5 device hosts
 F5_HOSTS = [
-    "10.162.67.53",
-    "10.162.67.54",
-    "10.162.118.137",  # Replace with the IP or hostname of your F5 device
+    "10.1.1.11",  # Replace with the IP or hostname of your F5 device
     # Add more devices as needed
 ]
 
