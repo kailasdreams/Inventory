@@ -1,1 +1,221 @@
+import logging
+import requests
+from flask import Flask, render_template, jsonify
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+# Shared user credentials
+USERNAME = "pathaka5"  # Replace with your F5 username
+PASSWORD = "!India@2022!"  # Replace with your F5 password
+
+# List of F5 device hosts
+F5_HOSTS = [
+    "10.162.67.53",
+    "10.162.67.54",
+    "10.162.118.137",  # Replace with the IP or hostname of your F5 device
+    # Add more devices as needed
+]
+
+
+
+
+# Disable SSL warnings for self-signed certificates
+requests.packages.urllib3.disable_warnings()
+
+def get_hostname_status(host, auth):
+    """Fetch the hostname of the F5 device."""
+    try:
+        hostname_url = f"https://{host}/mgmt/tm/sys/global-settings"
+        response = requests.get(hostname_url, auth=auth, verify=False)
+        response.raise_for_status()
+        logger.debug(f"Hostname response for {host}: {response.json()}")
+        return response.json().get("hostname", "Unknown")
+    except Exception as e:
+        logger.error(f"Error fetching hostname from {host}: {e}")
+        return "Unknown"
+
+def get_serial_number(host, auth):
+    """Fetch the chassis serial number of the F5 device."""
+    try:
+        serial_url = f"https://{host}/mgmt/tm/sys/hardware"
+        response = requests.get(serial_url, auth=auth, verify=False)
+        response.raise_for_status()
+        logger.debug(f"Serial number response for {host}: {response.json()}")
+        entries = response.json().get("entries", {})
+        hardware_entry = entries.get("https://localhost/mgmt/tm/sys/hardware/0", {})
+        nested_stats = hardware_entry.get("nestedStats", {}).get("entries", {})
+        serial_number = nested_stats.get("chassisSerialNumber", {}).get("description", "Unknown")
+        return serial_number
+    except Exception as e:
+        logger.error(f"Error fetching chassis serial number from {host}: {e}")
+        return "Unknown"
+
+def get_failover_status(host, auth):
+    """Fetch the failover status of the F5 device."""
+    try:
+        failover_url = f"https://{host}/mgmt/tm/sys/failover"
+        response = requests.get(failover_url, auth=auth, verify=False)
+        response.raise_for_status()
+        logger.debug(f"Failover response for {host}: {response.json()}")
+        failover_state = response.json().get("apiRawValues", {}).get("apiAnonymous", "Unknown")
+        if "active" in failover_state.lower():
+            return "Active"
+        elif "standby" in failover_state.lower():
+            return "Standby"
+        else:
+            return "Unknown"
+    except Exception as e:
+        logger.error(f"Error fetching failover status from {host}: {e}")
+        return "Unknown"
+
+def get_f5_partitions(host, auth, headers):
+    """Fetch all partitions available on the F5 device."""
+    try:
+        partitions_url = f"https://{host}/mgmt/tm/auth/partition"
+        response = requests.get(partitions_url, auth=auth, headers=headers, verify=False)
+        response.raise_for_status()
+        partitions = response.json().get("items", [])
+        return [partition["name"] for partition in partitions]
+    except Exception as e:
+        logger.error(f"Error fetching partitions from {host}: {e}")
+        return ["Common"]
+
+def parse_tmos_details(vs_name, host, auth, partition):
+    """Fetch and parse TMOS details for a specific virtual server."""
+    try:
+        tmos_url = f"https://{host}/mgmt/tm/util/bash"
+        details = {}
+
+        # Fetch status using "show ltm virtual"
+        show_virtual_payload = {
+            "command": "run",
+            "utilCmdArgs": f"-c \"tmsh show ltm virtual /{partition}/{vs_name}\""
+        }
+        show_virtual_response = requests.post(tmos_url, json=show_virtual_payload, auth=auth, verify=False)
+        show_virtual_response.raise_for_status()
+        show_virtual_output = show_virtual_response.json().get("commandResult", "")
+        logger.debug(f"show_virtual_output for {vs_name}: {show_virtual_output}")
+
+        # Parse details
+        for line in show_virtual_output.splitlines():
+            if "availability" in line.lower():
+                details["availability"] = line.split(":", 1)[-1].strip()
+            elif "state" in line.lower():
+                details["state"] = line.split(":", 1)[-1].strip()
+
+        return details
+    except Exception as e:
+        logger.error(f"Error parsing TMOS details for {vs_name} on {host}: {e}")
+        return {}
+
+def get_f5_inventory():
+    all_vip_data = []
+
+    for host in F5_HOSTS:
+        base_url = f"https://{host}/mgmt/tm"
+        auth = (USERNAME, PASSWORD)
+        headers = {"Content-Type": "application/json"}
+
+        failover_status = get_failover_status(host, auth)
+        logger.info(f"Failover status for {host}: {failover_status}")
+
+        partitions = get_f5_partitions(host, auth, headers)
+        logger.info(f"Found partitions on {host}: {partitions}")
+        hostname = get_hostname_status(host, auth)
+        serial_number = get_serial_number(host, auth)
+
+        for partition in partitions:
+            try:
+                vip_url = f"{base_url}/ltm/virtual?$filter=partition eq '{partition}'"
+                logger.info(f"Fetching VIPs from partition {partition} on {host}...")
+                vip_response = requests.get(vip_url, auth=auth, headers=headers, verify=False)
+                vip_response.raise_for_status()
+                vips = vip_response.json().get("items", [])
+
+                if not vips:
+                    logger.warning(f"No VIPs found in partition {partition} on device {host}.")
+                    continue
+
+                for vip in vips:
+                    destination = vip.get("destination", "Unknown").split("/")[-1]
+                    if ':' not in destination:
+                        logger.warning(f"Invalid destination format for VIP {vip.get('name')} in partition {partition}.")
+                        continue
+
+                    vip_ip, vip_port = destination.split(':')
+                    vip_port = int(vip_port)
+
+                    tmos_details = parse_tmos_details(vip.get("name"), host, auth, partition)
+                    availability = tmos_details.get("availability", "Unknown")
+                    state = tmos_details.get("state", "Unknown")
+                    description = vip.get("description", "Unknown")
+                    pool_name = vip.get("pool", None)
+                    pool_members = []
+
+                    if pool_name:
+                        pool_name = pool_name.split('/')[-1]
+                        pool_url = f"{base_url}/ltm/pool/~{partition}~{pool_name}/members"
+                        logger.info(f"Fetching pool members for pool {pool_name} in partition {partition} on {host}.")
+
+                        try:
+                            pool_response = requests.get(pool_url, auth=auth, headers=headers, verify=False)
+                            pool_response.raise_for_status()
+                            members = pool_response.json().get("items", [])
+
+                            for member in members:
+                                member_ip = member.get("address", "Unknown")
+                                member_port = int(member.get("port", 80))
+                                member_state = member.get("state", "Unknown")
+                                member_session = member.get("session", "Unknown")
+                                pool_members.append({
+                                    "member_ip": member_ip,
+                                    "member_port": member_port,
+                                    "state": member_state,
+                                    "session": member_session
+                                })
+                        except Exception as e:
+                            logger.error(f"Error fetching pool members for pool {pool_name} in partition {partition} on {host}: {e}")
+                    else:
+                        logger.info(f"No pool associated with VIP {vip.get('name')} in partition {partition} on {host}.")
+
+                    all_vip_data.append({
+                        "lb_ip": host,
+                        "failover_status": failover_status,
+                        "vip_name": vip.get("name"),
+                        "hostname": hostname,
+                        "serial_number": serial_number,
+                        "description": description,
+                        "vip_ip": vip_ip,
+                        "vip_port": vip_port,
+                        "availability": availability,
+                        "state": state,
+                        "pool_name": pool_name if pool_name else "No Pool",
+                        "pool_members": pool_members,
+                        "partition": partition
+                    })
+
+            except Exception as err:
+                logger.error(f"An error occurred while processing partition {partition} on {host}: {err}")
+
+    return {"vips": all_vip_data}
+
+@app.route('/')
+def home():
+    inventory = get_f5_inventory()
+    if not inventory["vips"]:
+        return "Failed to retrieve F5 inventory.", 500
+    return render_template("index.html", inventory=inventory)
+
+@app.route('/api/inventory')
+def api_inventory():
+    inventory = get_f5_inventory()
+    if not inventory["vips"]:
+        return jsonify({"error": "Failed to retrieve F5 inventory."}), 500
+    return jsonify(inventory)
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
