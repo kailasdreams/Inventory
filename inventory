@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Shared user credentials
-USERNAME = "pathaka5"  # Replace with your F5 username
-PASSWORD = "!India@2022!"  # Replace with your F5 password
+USERNAME = "admin"  # Replace with your F5 username
+PASSWORD = "kailas@123"  # Replace with your F5 password
 
 # List of F5 device hosts
 F5_HOSTS = [
