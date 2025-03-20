@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F5 VIPs and Pool Members</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.3/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f8ff;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        h1 { color: blue; }
+        h2 { color: red; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        table th, table td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        table tr:hover {
+            background-color: #f1f1f1;
+        }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>WELCOME  F5 INVENTORY PORTAL</h1>
+    <h2>F5 VIPs and Pool Members</h2>
+    <table id="inventoryTable">
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Hostname</th>
+                <th>Failover Status</th>
+                <th>VIP Name</th>
+                <th>Description</th>
+                <th>VIP IP</th>
+                <th>VIP Port</th>
+                <th>Availability</th>
+                <th>State</th>
+                <th>Pool Name</th>
+                <th>Pool Members</th>
+                <th>Member Status</th>
+                <th>Partition</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vip in inventory.vips %}
+            <tr>
+                <td>{{ vip.lb_ip }}</td>
+                <td>{{ vip.hostname }}</td>
+                <td>{{ vip.failover_status }}</td>
+                <td>{{ vip.vip_name }}</td>
+                <td>{{ vip.description }}</td>
+                <td>{{ vip.vip_ip }}</td>
+                <td>{{ vip.vip_port }}</td>
+                <td>{{ vip.availability }}</td>
+                <td>{{ vip.state }}</td>
+                <td>{{ vip.pool_name }}</td>
+                <td>{% for member in vip.pool_members %}{{ member.member_ip }}:{{ member.member_port }}<br>{% endfor %}</td>
+                <td>{% for member in vip.pool_members %}{{ member.state }}<br>{% endfor %}</td>
+                <td>{{ vip.partition }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <button onclick="downloadExcel()">Download as Excel</button>
+    <button onclick="downloadCSV()">Download as CSV</button>
+
+    <script>
+        function tableToArray() {
+            let table = document.getElementById('inventoryTable');
+            let rows = table.getElementsByTagName('tr');
+            let data = [];
+            for (let i = 0; i < rows.length; i++) {
+                let cols = rows[i].getElementsByTagName(i === 0 ? 'th' : 'td');
+                let rowData = [];
+                for (let j = 0; j < cols.length; j++) {
+                    rowData.push(cols[j].innerText.replace(/\n/g, ' '));
+                }
+                data.push(rowData);
+            }
+            return data;
+        }
+        function downloadExcel() {
+            let workbook = XLSX.utils.book_new();
+            let worksheet = XLSX.utils.aoa_to_sheet(tableToArray());
+            XLSX.utils.book_append_sheet(workbook, worksheet, "F5 Inventory");
+            XLSX.writeFile(workbook, "f5_inventory.xlsx");
+        }
+        function downloadCSV() {
+            let data = tableToArray();
+            let csvContent = "data:text/csv;charset=utf-8," 
+                + data.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+            let encodedUri = encodeURI(csvContent);
+            let link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "f5_inventory.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+    </script>
+</body>
+</html>
