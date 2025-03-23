@@ -1,1 +1,189 @@
-xas
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F5 VIPs and Pool Members</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f8ff;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: blue;
+        }
+        h2 {
+            text-align: center;
+            color: red;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        table th, table td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        table tr:hover {
+            background-color: #f1f1f1;
+        }
+        input[type="text"] {
+            width: 50%;
+            padding: 10px;
+            margin: 20px auto;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: block;
+            text-align: center;
+        }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        p {
+            text-align: center;
+            font-size: 1.2em;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>WELCOME  F5 INVENTORY PORTAL</h1>
+    <h2>F5 VIPs and Pool Members</h2>
+
+    <input type="text" id="filterInput" placeholder="Search by VIP Name..." onkeyup="filterTable()">
+
+    <table id="inventoryTable">
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Hostname</th>
+                <th>Failover Status</th>
+                <th>VIP Name</th>
+                <th>Description</th>
+                <th>VIP IP</th>
+                <th>VIP Port</th>
+                <th>Availability</th>
+                <th>State</th>
+                <th>Pool Name</th>
+                <th>Pool Members</th>
+                <th>Member Status</th>
+                <th>Partition</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vip in inventory.vips %}
+            <tr>
+                <td>{{ vip.lb_ip }}</td>
+                <td>{{ vip.hostname }}</td>
+                <td>{{ vip.failover_status }}</td>
+                <td>{{ vip.vip_name }}</td>
+                <td>{{ vip.description }}</td>
+                <td>{{ vip.vip_ip }}</td>
+                <td>{{ vip.vip_port }}</td>
+                <td>{{ vip.availability }}</td>
+                <td>{{ vip.state }}</td>
+                <td>{{ vip.pool_name }}</td>
+                <td>
+                    <ul>
+                        {% for member in vip.pool_members %}
+                        <li>{{ member.member_ip }}:{{ member.member_port }}</li>
+                        {% endfor %}
+                    </ul>
+                </td>
+                <td>
+                    <ul>
+                        {% for member in vip.pool_members %}
+                        <li>{{ member.state }}</li>
+                        {% endfor %}
+                    </ul>
+                </td>
+                <td>{{ vip.partition }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <button onclick="downloadCSV()">Download as CSV</button>
+
+    <script>
+        function filterTable() {
+            const input = document.getElementById('filterInput');
+            const filter = input.value.toLowerCase();
+            const table = document.getElementById('inventoryTable');
+            const rows = table.getElementsByTagName('tr');
+
+            for (let i = 1; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                let match = false;
+                for (let j = 0; j < cells.length; j++) {
+                    if (cells[j] && cells[j].innerText.toLowerCase().includes(filter)) {
+                        match = true;
+                        break;
+                    }
+                }
+                rows[i].style.display = match ? '' : 'none';
+            }
+        }
+
+        function downloadCSV() {
+            let table = document.getElementById('inventoryTable');
+            let rows = table.getElementsByTagName('tr');
+            let csvContent = [];
+
+            for (let i = 0; i < rows.length; i++) {
+                let cols = rows[i].getElementsByTagName(i === 0 ? 'th' : 'td');
+                let rowData = [];
+
+                for (let j = 0; j < cols.length; j++) {
+                    if (cols[j].getElementsByTagName('ul').length > 0) {
+                        let listItems = cols[j].getElementsByTagName('li');
+                        let listText = [];
+                        for (let k = 0; k < listItems.length; k++) {
+                            listText.push(listItems[k].innerText);
+                        }
+                        rowData.push(`"${listText.join("; ")}"`); // Properly format multi-values
+                    } else {
+                        rowData.push(`"${cols[j].innerText.replace(/"/g, '""')}"`); // Escape double quotes
+                    }
+                }
+                csvContent.push(rowData.join(","));
+            }
+
+            let csvString = "data:text/csv;charset=utf-8," + csvContent.join("\n");
+            let encodedUri = encodeURI(csvString);
+            let link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "f5_inventory.csv");
+            document.body.appendChild(link);
+            link.click();
+        }
+    </script>
+
+</body>
+</html>
